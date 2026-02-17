@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pydantic-settings
+python-dotenv
+langchain
+langchain-core
+langchain-groq
+langchain-community
+langgraph
+groq
+tavily-python
+axios
+python-multipart
+aiosqlite
+markdown
