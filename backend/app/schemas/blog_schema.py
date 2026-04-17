@@ -17,4 +17,5 @@ class BlogResponse(BlogBase):
         from_attributes = True
 
 class BlogGenerate(BaseModel):
-    topic: str
+    topic: Optional[str] = None
+    youtube_url: Optional[str] = None

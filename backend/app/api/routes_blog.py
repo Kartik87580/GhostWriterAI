@@ -12,8 +12,12 @@ router = APIRouter()
 @router.post("/generate-blog", response_model=blog_schema.BlogResponse)
 async def generate_blog(request: blog_schema.BlogGenerate, db: Session = Depends(get_db)):
     try:
-        content = await generate_blog_content(request.topic)
-        db_blog = crud_blog.create_blog(db, topic=request.topic, content=content)
+        content = await generate_blog_content(topic=request.topic, youtube_url=request.youtube_url)
+        
+        # Use request.topic if provided, else use youtube_url
+        display_topic = request.topic if request.topic else f"YouTube: {request.youtube_url}"
+        
+        db_blog = crud_blog.create_blog(db, topic=display_topic, content=content)
         return db_blog
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

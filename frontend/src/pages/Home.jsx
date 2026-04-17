@@ -6,22 +6,24 @@ import Loader from '../components/Loader';
 import toast, { Toaster } from 'react-hot-toast';
 
 export default function Home() {
-    const [topic, setTopic] = useState('');
+    const [input, setInput] = useState('');
+    const [mode, setMode] = useState('topic'); // 'topic' or 'youtube'
     const [loading, setLoading] = useState(false);
     const [blog, setBlog] = useState(null);
     const [copied, setCopied] = useState(false);
 
     const handleGenerate = async (e) => {
         e.preventDefault();
-        if (!topic.trim()) {
-            toast.error('Please enter a topic');
+        if (!input.trim()) {
+            toast.error(`Please enter a ${mode === 'topic' ? 'topic' : 'YouTube URL'}`);
             return;
         }
 
         setLoading(true);
         setBlog(null);
         try {
-            const data = await blogService.generateBlog(topic);
+            const payload = mode === 'topic' ? { topic: input } : { youtube_url: input };
+            const data = await blogService.generateBlog(payload);
             setBlog(data);
             toast.success('Blog generated successfully!');
         } catch (err) {
@@ -50,8 +52,28 @@ export default function Home() {
                     Write <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-500">Brilliant</span> Blogs <br /> in Seconds
                 </h1>
                 <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-                    Expert-level research and writing, powered by advanced AI. Enter a topic and watch the magic happen.
+                    Expert-level research and writing, powered by advanced AI. Use a topic or a YouTube video.
                 </p>
+            </div>
+
+            {/* Mode Selector */}
+            <div className="flex justify-center mb-8">
+                <div className="flex p-1 bg-white/5 rounded-xl border border-white/10">
+                    <button
+                        onClick={() => setMode('topic')}
+                        className={`flex items-center gap-2 px-6 py-2 rounded-lg transition-all ${mode === 'topic' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <PencilLine size={18} />
+                        <span className="font-medium">By Topic</span>
+                    </button>
+                    <button
+                        onClick={() => setMode('youtube')}
+                        className={`flex items-center gap-2 px-6 py-2 rounded-lg transition-all ${mode === 'youtube' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Sparkles size={18} />
+                        <span className="font-medium">By YouTube URL</span>
+                    </button>
+                </div>
             </div>
 
             {/* Input Section */}
@@ -59,9 +81,9 @@ export default function Home() {
                 <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 p-2 rounded-2xl glass-card">
                     <input
                         type="text"
-                        value={topic}
-                        onChange={(e) => setTopic(e.target.value)}
-                        placeholder="What should we write about today?"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder={mode === 'topic' ? "What should we write about today?" : "Paste YouTube video URL here..."}
                         className="flex-1 bg-transparent px-6 py-4 text-white placeholder-slate-500 focus:outline-none text-lg"
                     />
                     <button

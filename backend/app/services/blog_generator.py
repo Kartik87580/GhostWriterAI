@@ -9,6 +9,7 @@ from langgraph.types import Send
 from app.core.llm_client import get_llm
 from app.services.prompt_builder import ROUTER_SYSTEM, ORCH_SYSTEM, WORKER_SYSTEM
 from app.services.research_service import get_evidence
+from app.services.youtube_service import get_youtube_transcript
 
 # --- Schemas from Notebooks ---
 
@@ -39,6 +40,8 @@ class EvidenceItem(BaseModel):
 
 class State(TypedDict):
     topic: str
+    youtube_url: Optional[str]
+    transcript: Optional[str]
     mode: str
     needs_research: bool
     queries: List[str]
@@ -50,6 +53,13 @@ class State(TypedDict):
 # --- Graph Nodes ---
 
 def router_node(state: State) -> dict:
+    if state.get("youtube_url"):
+        return {
+            "needs_research": False,
+            "mode": "hybrid",
+            "queries": []
+        }
+    
     llm = get_llm().with_structured_output(RouterDecision)
     decision = llm.invoke([
         SystemMessage(content=ROUTER_SYSTEM),
@@ -69,9 +79,14 @@ def research_node(state: State) -> dict:
 
 def orchestrator_node(state: State) -> dict:
     llm = get_llm().with_structured_output(Plan)
+    
+    context = f"Topic: {state['topic']}\nMode: {state['mode']}\nEvidence: {state['evidence']}"
+    if state.get("transcript"):
+        context += f"\n\nYouTube Transcript Content (Primary Source):\n{state['transcript']}"
+        
     plan = llm.invoke([
         SystemMessage(content=ORCH_SYSTEM),
-        HumanMessage(content=f"Topic: {state['topic']}\nMode: {state['mode']}\nEvidence: {state['evidence']}")
+        HumanMessage(content=context)
     ])
     return {"plan": plan}
 
@@ -135,9 +150,18 @@ builder.add_edge("reducer", END)
 
 graph = builder.compile()
 
-async def generate_blog_content(topic: str) -> str:
+async def generate_blog_content(topic: Optional[str] = None, youtube_url: Optional[str] = None) -> str:
+    transcript = None
+    if youtube_url:
+        transcript = get_youtube_transcript(youtube_url)
+        if not topic:
+            # Use a placeholder if topic is missing, the LLM will usually infer it from transcript
+            topic = f"Blog based on YouTube video: {youtube_url}"
+
     initial_state = {
         "topic": topic,
+        "youtube_url": youtube_url,
+        "transcript": transcript,
         "mode": "",
         "needs_research": False,
         "queries": [],

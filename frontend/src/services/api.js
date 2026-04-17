@@ -7,8 +7,8 @@ const api = axios.create({
 });
 
 export const blogService = {
-    generateBlog: async (topic) => {
-        const response = await api.post('/generate-blog', { topic });
+    generateBlog: async (data) => {
+        const response = await api.post('/generate-blog', data);
         return response.data;
     },
     getBlogs: async () => {
