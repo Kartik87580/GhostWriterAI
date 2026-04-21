@@ -2,6 +2,11 @@ import smtplib
 from email.message import EmailMessage
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Explicitly load .env so credentials are available even if this module
+# is imported before core/config.py initialises dotenv.
+load_dotenv()
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
