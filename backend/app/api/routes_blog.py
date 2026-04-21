@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+import os, re
+import requests as http_requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.db.database import get_db
 from app.db import crud_blog
@@ -35,3 +40,58 @@ def read_blog(blog_id: int, db: Session = Depends(get_db), current_user: User = 
     if db_blog is None:
         raise HTTPException(status_code=404, detail="Blog not found")
     return db_blog
+
+from pydantic import BaseModel
+
+class DevToPublishRequest(BaseModel):
+    devto_api_key: str
+
+@router.post("/blogs/{blog_id}/publish-devto")
+def publish_to_devto(blog_id: int, req: DevToPublishRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Publish a saved blog to DEV.TO using the user-supplied API key."""
+    db_blog = crud_blog.get_blog(db, blog_id=blog_id, user_id=current_user.id)
+    if db_blog is None:
+        raise HTTPException(status_code=404, detail="Blog not found")
+
+    if not req.devto_api_key or len(req.devto_api_key.strip()) < 5:
+        raise HTTPException(status_code=400, detail="A valid DEV.TO API key is required")
+
+    # Extract title from first # heading in the markdown
+    title = db_blog.topic  # fallback
+    for line in db_blog.content.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            title = re.sub(r"^#+\s*", "", stripped).strip()
+            break
+
+    payload = {
+        "article": {
+            "title": title,
+            "published": True,
+            "body_markdown": db_blog.content,
+            "tags": ["ai", "automation", "blog"],
+        }
+    }
+
+    response = http_requests.post(
+        "https://dev.to/api/articles",
+        json=payload,
+        headers={"api-key": req.devto_api_key.strip(), "Content-Type": "application/json"},
+        timeout=30,
+    )
+
+    if response.status_code == 201:
+        data = response.json()
+        return {
+            "success": True,
+            "url": data.get("url"),
+            "title": data.get("title"),
+            "id": data.get("id"),
+        }
+    else:
+        raise HTTPException(
+            status_code=502,
+            detail=f"DEV.TO API error: {response.text}"
+        )
+
+

@@ -12,7 +12,7 @@ export default function Navbar() {
     const location = useLocation();
 
     const navItems = [
-        { path: '/', label: 'Writer', icon: PencilLine },
+        { path: '/app', label: 'Writer', icon: PencilLine },
         { path: '/history', label: 'History', icon: History },
     ];
 
@@ -45,7 +45,7 @@ export default function Navbar() {
                 <button
                     onClick={() => {
                         localStorage.removeItem('token');
-                        window.location.href = '/login';
+                        window.location.href = '/landing';
                     }}
                     className="text-slate-400 hover:text-white font-medium text-sm transition-colors bg-white/5 hover:bg-red-500/20 px-4 py-2 rounded-full"
                 >
