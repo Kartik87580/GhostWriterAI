@@ -105,10 +105,11 @@ def send_otp_email(receiver_email: str, otp: str):
     </html>
     """
     
-    msg.add_alternative(html_content, subtype='html')
-
-    # Backup plain text for compatibility
+    # Set plain text first
     msg.set_content(f"Your GhostWriterAI verification code is: {otp}")
+    
+    # Add HTML alternative second
+    msg.add_alternative(html_content, subtype='html')
 
     # Only attempt to send if configured, otherwise just print for local debug
     if SENDER_EMAIL == "your_email@gmail.com" or APP_PASSWORD == "xxxx xxxx xxxx xxxx":
