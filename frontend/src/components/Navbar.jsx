@@ -41,6 +41,18 @@ export default function Navbar() {
                 })}
             </div>
 
+            <div className="absolute right-10 top-8 flex items-center gap-2">
+                <button
+                    onClick={() => {
+                        localStorage.removeItem('token');
+                        window.location.href = '/login';
+                    }}
+                    className="text-slate-400 hover:text-white font-medium text-sm transition-colors bg-white/5 hover:bg-red-500/20 px-4 py-2 rounded-full"
+                >
+                    Logout
+                </button>
+            </div>
+
             <div className="absolute left-10 top-8 flex items-center gap-2 text-white font-bold text-xl tracking-tight hidden lg:flex">
                 <div className="p-2 bg-gradient-to-br from-purple-500 to-blue-600 rounded-lg">
                     <Sparkles size={20} />

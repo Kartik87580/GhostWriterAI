@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import routes_blog
+from app.api import routes_blog, routes_auth
 from app.db.database import engine, Base
 
 # Create database tables
@@ -18,6 +18,7 @@ app.add_middleware(
 )
 
 # Include routes
+app.include_router(routes_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(routes_blog.router, tags=["blogs"])
 
 @app.get("/")
