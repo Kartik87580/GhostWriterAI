@@ -1,0 +1,153 @@
+# ✍️ GhostWriterAI: System Architecture & Workflow Diagram
+
+This document provides a comprehensive technical overview of the system architecture, authentication protocols, and agentic orchestration pipelines powering **GhostWriterAI**.
+
+---
+
+## 🗺️ System Architecture Diagram
+
+Below is the complete, color-coded architecture diagram illustrating the step-by-step workflow of the application from frontend user interaction and authentication to the parallelized multi-agent blog generation graph and third-party API integration.
+
+```mermaid
+graph TD
+    %% Styling Definitions
+    classDef clientClass fill:#E0F7FA,stroke:#00ACC1,stroke-width:2px,color:#006064;
+    classDef apiClass fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px,color:#311B92;
+    classDef graphClass fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#E65100;
+    classDef agentClass fill:#E8F5E9,stroke:#43A047,stroke-width:2px,color:#1B5E20;
+    classDef extClass fill:#FCE4EC,stroke:#D81B60,stroke-width:2px,color:#880E4F;
+    classDef dbClass fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px,color:#F57F17;
+
+    subgraph Client["🎨 Frontend Client (React + Vite)"]
+        UI["Writer Dashboard<br/>(Home.jsx)"]:::clientClass
+        AuthUI["Authentication Panel<br/>(Signup, Login, OTP)"]:::clientClass
+        LS[("Local Storage<br/>(JWT & DEV.TO Key)")]:::clientClass
+    end
+
+    subgraph API["⚡ Backend Gateway (FastAPI)"]
+        AR["Auth Controller<br/>(routes_auth.py)"]:::apiClass
+        BR["Blog Controller<br/>(routes_blog.py)"]:::apiClass
+        SMTP["SMTP Mailer Service<br/>(Gmail SMTP)"]:::apiClass
+    end
+
+    subgraph AgentPipeline["🤖 LangGraph Multi-Agent Orchestration (blog_generator.py)"]
+        direction TB
+        InitState["State Initialization<br/>(Topic, Transcript, etc.)"]:::graphClass
+        RouterNode{"1. Router Agent"}:::graphClass
+        ResearchNode["2. Research Agent<br/>(Tavily Integration)"]:::agentClass
+        OrchNode["3. Orchestrator Agent<br/>(Generates Plan & Tasks)"]:::agentClass
+        
+        subgraph Workers["Parallel Execution Plan (Fan-Out Map)"]
+            W1["Worker Agent 1<br/>(Section 1)"]:::agentClass
+            W2["Worker Agent 2<br/>(Section 2)"]:::agentClass
+            Wn["Worker Agent N<br/>(Section N)"]:::agentClass
+        end
+        
+        Reducer["4. Reducer / Compiler<br/>(Merges & Formats Sections)"]:::agentClass
+    end
+
+    subgraph External["🌐 Cloud & External Integrations"]
+        Neon[("Neon Database<br/>(Serverless PostgreSQL)")]:::dbClass
+        Tavily["Tavily Search API<br/>(Real-time Web Context)"]:::extClass
+        Groq["Groq LPU Engine<br/>(Llama 3.3 70B)"]:::extClass
+        DevTo["DEV.TO API<br/>(Developer Platform)"]:::extClass
+    end
+
+    %% --- Authentication Workflow Connections ---
+    AuthUI -->|1. Submit Signup / Login| AR
+    AR -->|2. Query / Save User Credentials| Neon
+    AR -->|3. Trigger OTP Request| SMTP
+    SMTP -.->|4. Deliver Email OTP| AuthUI
+    AR -->|5. Return Signed JWT| AuthUI
+    AuthUI -->|6. Cache Session Info| LS
+
+    %% --- Blog Generation Intake Flow ---
+    UI -->|1. Submit Generation Prompt| BR
+    LS -.->|JWT Authorization Header| BR
+    BR -->|2. Verify Session Token| Neon
+    BR -->|3. Start Async Generation| InitState
+
+    %% --- LangGraph Agent Processing State Machine ---
+    InitState --> RouterNode
+    RouterNode -->|Needs Web Search| ResearchNode
+    RouterNode -->|Direct to Outline Plan| OrchNode
+    
+    ResearchNode -->|Query Engine| Tavily
+    Tavily -->|Inject Web Evidence| ResearchNode
+    ResearchNode --> OrchNode
+    
+    OrchNode -->|Generate Structured Schema| Groq
+    Groq -->|Plan (Title, Tone, Section Tasks)| OrchNode
+    
+    OrchNode -->|Fan-Out Tasks Parallelly| Workers
+    
+    W1 -->|Generate Content| Groq
+    W2 -->|Generate Content| Groq
+    Wn -->|Generate Content| Groq
+    
+    Groq -->|Section 1 Markdown| W1
+    Groq -->|Section 2 Markdown| W2
+    Groq -->|Section N Markdown| Wn
+    
+    Workers -->|Collate Sections| Reducer
+    Reducer -->|Compiled Blog Markdown| BR
+
+    %% --- Post Generation and Distribution Flow ---
+    BR -->|4. Persist Blog Data| Neon
+    BR -->|5. Deliver Markdown Document| UI
+    
+    UI -->|6. Export Document| Download[".md File / Clipboard"]:::clientClass
+    UI -->|7. Request Cloud Publishing| BR
+    LS -.->|DEV.TO API Key| BR
+    BR -->|8. Push Article JSON| DevTo
+    DevTo -->|9. Post URL / Live Link| UI
+```
+
+---
+
+## ⚙️ Step-by-Step System Walkthrough
+
+### Phase 1: Authentication & Session Setup
+1. **User Sign Up**: The user registers on the client application by providing an email and password.
+2. **Credential Storage & OTP Generation**: The FastAPI Auth Router (`routes_auth.py`) hashes the password using `bcrypt`, stores the unverified user record in **Neon DB (PostgreSQL)**, and generates a short-lived cryptographically secure OTP (One-Time Password).
+3. **OTP Dispatch**: The backend triggers the email service, which compiles a custom HTML verification email and dispatches it via the Gmail **SMTP server**.
+4. **Verification**: The user enters the OTP in the frontend modal. The backend validates it and marks the user's account status as active in the database.
+5. **JWT Token Issuance**: Once activated, subsequent logins return a signed **JWT (JSON Web Token)** token containing user identity claims, which is cached securely in the browser's `localStorage`.
+
+### Phase 2: Intake & Pre-Processing
+1. **Request Intake**: From the dashboard (`Home.jsx`), the authenticated user submits a blog topic (e.g., *"How Groq LPUs differ from GPUs"*) or a **YouTube URL** to the `/api/blog/generate` endpoint. The Axios client automatically attaches the JWT token to the authorization header.
+2. **Authorization**: The API gateway verifies the JWT token.
+3. **Source Extraction (YouTube)**:
+   - If a YouTube URL is supplied, the backend uses the `youtube_service` to fetch and extract the video's transcript text.
+   - The transcript is injected as primary source context into the LangGraph state.
+   - If a topic is supplied without a URL, the graph initializes standard online search routes.
+
+### Phase 3: LangGraph Agentic Pipeline (`blog_generator.py`)
+The generation pipeline leverages a modular state-machine orchestration framework built with **LangGraph**:
+
+* **State Initialization**: The pipeline constructs the starting graph state containing inputs: `topic`, `youtube_url`, `transcript`, and empty structures for plan, evidence, and sections.
+* **1. Router Agent (`router_node`)**: 
+  - If a YouTube transcript is available, the Router automatically sets `needs_research = False` and `mode = "hybrid"`, bypassing external searches to avoid polluting transcript data.
+  - If no transcript is available, the Router runs an LLM invocation (Groq Llama 3.3 70B) utilizing structured JSON outputs (`RouterDecision` schema) to determine if the topic requires active web research and compiles appropriate search queries.
+* **2. Research Agent (`research_node`)**:
+  - If the router requested research, this node executes concurrent API queries using **Tavily Search API** to retrieve highly relevant, current web snippets. The results are stored in the state as context evidence.
+* **3. Orchestrator Agent (`orchestrator_node`)**:
+  - The Orchestrator gathers the topic, the gathered evidence (if any), and the YouTube transcript (if present).
+  - It calls Groq to compile a comprehensive document layout following the Pydantic `Plan` schema.
+  - This plan outputs the blog's final title, target audience, tone, and a structured array of **Tasks** (representing individual sections with explicit bullet points, goals, word counts, and whether code snippets are required).
+* **4. Parallel Worker Agents (`worker_node` - Fan-Out)**:
+  - Utilizing LangGraph's dynamic `Send` API, the graph forks (fan-out) execution into multiple parallel workers—one for each task in the orchestrator's plan.
+  - Each worker invokes the LLM independently with its specific sub-task instructions, goals, and outline to write its section in high-quality Markdown, bypassing sequential LLM bottlenecks.
+* **5. Reducer Agent (`reducer_node` - Fan-In/Reduce)**:
+  - As parallel worker nodes finish, their outputs are written to the shared `sections` state list (accumulated using `operator.add`).
+  - The Reducer node gathers all completed sections, sorts them by their original task ID to guarantee logical continuity, prepends the final title, and compiles the final full-length Markdown blog.
+
+### Phase 4: Persistence, Export & Multi-Channel Distribution
+1. **DB Persistence**: The FastAPI backend receives the finished Markdown document from the LangGraph run, links it to the authenticated user ID, and saves it permanently to the **Neon PostgreSQL database** for future retrieval via the `/api/blogs/history` endpoint.
+2. **Dashboard Delivery**: The markdown is returned to the React frontend and rendered beautifully as a rich document interface.
+3. **Local Action Export**: The user can download the article directly as a `.md` document or copy it to their clipboard.
+4. **Cloud Publishing (DEV.TO API)**:
+  - If the user clicks *"Publish to DEV.TO"*, the application prompts them for their DEV.TO API Key (if not already saved in `localStorage`).
+  - The frontend sends the API key along with the blog's Markdown content to the `/api/blog/publish` route.
+  - The backend DEV.TO service compiles the metadata, structures it into front-matter format, and makes an HTTP POST request to the **DEV.TO developer API**.
+  - The live blog post URL is returned to the user interface instantly.

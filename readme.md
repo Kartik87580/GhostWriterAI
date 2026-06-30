@@ -54,11 +54,110 @@ An intelligent, multi-agent blog writing system powered by **LangChain**, **Lang
 
 ---
 
+## 🗺️ System Workflow & Architecture
+
+```mermaid
+graph TD
+    %% Styling Definitions
+    classDef clientClass fill:#E0F7FA,stroke:#00ACC1,stroke-width:2px,color:#006064;
+    classDef apiClass fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px,color:#311B92;
+    classDef graphClass fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#E65100;
+    classDef agentClass fill:#E8F5E9,stroke:#43A047,stroke-width:2px,color:#1B5E20;
+    classDef extClass fill:#FCE4EC,stroke:#D81B60,stroke-width:2px,color:#880E4F;
+    classDef dbClass fill:#FFFDE7,stroke:#FBC02D,stroke-width:2px,color:#F57F17;
+
+    subgraph Client["🎨 Frontend Client (React + Vite)"]
+        UI["Writer Dashboard<br/>(Home.jsx)"]:::clientClass
+        AuthUI["Authentication Panel<br/>(Signup, Login, OTP)"]:::clientClass
+        LS[("Local Storage<br/>(JWT & DEV.TO Key)")]:::clientClass
+    end
+
+    subgraph API["⚡ Backend Gateway (FastAPI)"]
+        AR["Auth Controller<br/>(routes_auth.py)"]:::apiClass
+        BR["Blog Controller<br/>(routes_blog.py)"]:::apiClass
+        SMTP["SMTP Mailer Service<br/>(Gmail SMTP)"]:::apiClass
+    end
+
+    subgraph AgentPipeline["🤖 LangGraph Multi-Agent Orchestration (blog_generator.py)"]
+        direction TB
+        InitState["State Initialization<br/>(Topic, Transcript, etc.)"]:::graphClass
+        RouterNode{"1. Router Agent"}:::graphClass
+        ResearchNode["2. Research Agent<br/>(Tavily Integration)"]:::agentClass
+        OrchNode["3. Orchestrator Agent<br/>(Generates Plan & Tasks)"]:::agentClass
+        
+        subgraph Workers["Parallel Execution Plan (Fan-Out Map)"]
+            W1["Worker Agent 1<br/>(Section 1)"]:::agentClass
+            W2["Worker Agent 2<br/>(Section 2)"]:::agentClass
+            Wn["Worker Agent N<br/>(Section N)"]:::agentClass
+        end
+        
+        Reducer["4. Reducer / Compiler<br/>(Merges & Formats Sections)"]:::agentClass
+    end
+
+    subgraph External["🌐 Cloud & External Integrations"]
+        Neon[("Neon Database<br/>(Serverless PostgreSQL)")]:::dbClass
+        Tavily["Tavily Search API<br/>(Real-time Web Context)"]:::extClass
+        Groq["Groq LPU Engine<br/>(Llama 3.3 70B)"]:::extClass
+        DevTo["DEV.TO API<br/>(Developer Platform)"]:::extClass
+    end
+
+    %% --- Authentication Workflow Connections ---
+    AuthUI -->|1. Submit Signup / Login| AR
+    AR -->|2. Query / Save User Credentials| Neon
+    AR -->|3. Trigger OTP Request| SMTP
+    SMTP -.->|4. Deliver Email OTP| AuthUI
+    AR -->|5. Return Signed JWT| AuthUI
+    AuthUI -->|6. Cache Session Info| LS
+
+    %% --- Blog Generation Intake Flow ---
+    UI -->|1. Submit Generation Prompt| BR
+    LS -.->|JWT Authorization Header| BR
+    BR -->|2. Verify Session Token| Neon
+    BR -->|3. Start Async Generation| InitState
+
+    %% --- LangGraph Agent Processing State Machine ---
+    InitState --> RouterNode
+    RouterNode -->|Needs Web Search| ResearchNode
+    RouterNode -->|Direct to Outline Plan| OrchNode
+    
+    ResearchNode -->|Query Engine| Tavily
+    Tavily -->|Inject Web Evidence| ResearchNode
+    ResearchNode --> OrchNode
+    
+    OrchNode -->|Generate Structured Schema| Groq
+    Groq -->|Plan (Title, Tone, Section Tasks)| OrchNode
+    
+    OrchNode -->|Fan-Out Tasks Parallelly| Workers
+    
+    W1 -->|Generate Content| Groq
+    W2 -->|Generate Content| Groq
+    Wn -->|Generate Content| Groq
+    
+    Groq -->|Section 1 Markdown| W1
+    Groq -->|Section 2 Markdown| W2
+    Groq -->|Section N Markdown| Wn
+    
+    Workers -->|Collate Sections| Reducer
+    Reducer -->|Compiled Blog Markdown| BR
+
+    %% --- Post Generation and Distribution Flow ---
+    BR -->|4. Persist Blog Data| Neon
+    BR -->|5. Deliver Markdown Document| UI
+    
+    UI -->|6. Export Document| Download[".md File / Clipboard"]:::clientClass
+    UI -->|7. Request Cloud Publishing| BR
+    LS -.->|DEV.TO API Key| BR
+    BR -->|8. Push Article JSON| DevTo
+    DevTo -->|9. Post URL / Live Link| UI
+```
+
+---
+
 ## 🔐 Authentication Flow
 
 ```
 User visits site
-  └─► Not logged in? → Redirect to /login
+  └─► Not logged in? → Redirect to /landing
         ├─► /signup  → Enter email + password
         │     └─► OTP sent to email (HTML formatted)
         │           └─► /verify-otp → Account activated
@@ -81,7 +180,7 @@ cd GhostWriterAI
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate   # Windows
+.venv\Scripts\activate   # Windows (use source .venv/bin/activate on Linux/Mac)
 pip install -r requirements.txt
 ```
 
@@ -99,11 +198,6 @@ Run the backend:
 ```bash
 uvicorn app.main:app --reload
 ```
-
-> **First-time Neon DB setup**: If your `users` or `blogs` table already exists and is missing new columns, run the one-time migration script:
-> ```bash
-> python migrate.py
-> ```
 
 ### 3. Frontend Setup
 ```bash
@@ -129,7 +223,9 @@ npm run dev
 |---|---|---|
 | **Backend** | [Render](https://render.com) | Root Dir: `backend`, Build: `pip install -r requirements.txt`, Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | **Frontend** | [Vercel](https://vercel.com) | Root Dir: `frontend`, Framework: Vite, Env Var: `VITE_API_URL=<your_render_url>` |
-| **Database** | [Neon](https://neon.tech) | Serverless PostgreSQL — add `DATABASE_URL` (pooled connection) as env var in Render |
+| **Database** | [Neon](https://neon.tech) | Serverless PostgreSQL — add `DATABASE_URL` as env var in Render |
+
+**Note**: For Vercel deployments, ensure a `vercel.json` exists in the frontend root with rewrites to `index.html` to prevent 404s on refresh.
 
 ---
 
@@ -140,45 +236,48 @@ GhostWriterAI/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── routes_auth.py     # Signup, Login, Verify OTP endpoints
-│   │   │   ├── routes_blog.py     # Blog CRUD (auth-protected)
-│   │   │   └── deps.py            # JWT get_current_user dependency
+│   │   │   ├── routes_auth.py     # Signup, Login, Verify OTP
+│   │   │   ├── routes_blog.py     # Generation & DEV.TO Publishing
+│   │   │   └── deps.py            # JWT Authentication
 │   │   ├── core/
-│   │   │   ├── config.py          # App settings & env vars
-│   │   │   └── security.py        # Bcrypt hashing & JWT generation
+│   │   │   ├── config.py          # Environment settings
+│   │   │   ├── llm_client.py      # LLM initialization
+│   │   │   └── security.py        # Hashing & JWT logic
 │   │   ├── db/
-│   │   │   ├── database.py        # SQLAlchemy engine + session
-│   │   │   └── crud_blog.py       # Blog DB operations
+│   │   │   ├── database.py        # SQLAlchemy Setup
+│   │   │   └── crud_blog.py       # Blog DB Operations
 │   │   ├── models/
-│   │   │   ├── user_model.py      # User table (email, password, otp, is_verified)
-│   │   │   └── blog_model.py      # Blog table (user_id FK)
+│   │   │   ├── blog_model.py      # SQLAlchemy Blog Model
+│   │   │   └── user_model.py      # SQLAlchemy User Model
 │   │   ├── schemas/
-│   │   │   ├── user_schema.py     # Pydantic user validation
-│   │   │   └── blog_schema.py     # Pydantic blog validation
+│   │   │   ├── blog_schema.py     # Pydantic schemas for blogs
+│   │   │   └── user_schema.py     # Pydantic schemas for users
 │   │   ├── services/
-│   │   │   ├── blog_generator.py  # LangGraph multi-agent pipeline
-│   │   │   ├── email_service.py   # HTML OTP email sender
-│   │   │   └── youtube_service.py # YouTube transcript extractor
-│   │   └── main.py                # FastAPI app entry point
-│   ├── migrate.py                 # One-time DB column migration script
-│   └── requirements.txt
+│   │   │   ├── blog_generator.py  # LangGraph Pipeline
+│   │   │   ├── email_service.py   # HTML SMTP Email
+│   │   │   ├── prompt_builder.py  # System Prompt Templates
+│   │   │   ├── research_service.py# Tavily Search Integration
+│   │   │   └── youtube_service.py # YouTube Transcript API
+│   │   └── main.py                # Entry Point
+│   ├── requirements.txt
+│   └── migrate.py                 # Database migration script
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
-│   │   │   ├── Login.jsx          # Login page
-│   │   │   ├── Signup.jsx         # Signup page
-│   │   │   ├── VerifyOTP.jsx      # OTP verification page
-│   │   │   ├── Home.jsx           # Blog generator dashboard
-│   │   │   ├── BlogHistory.jsx    # User's blog history
-│   │   │   └── BlogView.jsx       # Individual blog viewer
+│   │   │   ├── Landing.jsx        # Public Landing Page
+│   │   │   ├── Home.jsx           # AI Writer Dashboard (Topic/YouTube)
+│   │   │   ├── BlogHistory.jsx    # User's saved blogs
+│   │   │   ├── BlogView.jsx       # Individual blog viewer
+│   │   │   ├── Login.jsx          # User Login
+│   │   │   ├── Signup.jsx         # User Registration
+│   │   │   └── VerifyOTP.jsx      # Email Verification flow
 │   │   ├── components/
-│   │   │   ├── Navbar.jsx         # Nav with logout button
-│   │   │   └── AnimatedBackground.jsx
-│   │   ├── services/
-│   │   │   ├── api.js             # Axios instance + JWT interceptor
-│   │   │   └── authService.js     # Login, signup, verifyOTP, logout
-│   │   └── App.jsx                # Routes with ProtectedRoute wrapper
-│   └── package.json
+│   │   │   ├── DevToModal.jsx     # Secure DEV.TO Publishing modal
+│   │   │   ├── AnimatedBackground.jsx # UI Effects
+│   │   │   ├── Navbar.jsx         # Authenticated Navigation
+│   │   │   └── PublicNavbar.jsx   # Public Navigation
+│   │   └── App.jsx                # Routing & Auth Guards
+│   └── vercel.json                # Vercel SPA config
 └── readme.md
 ```
 
@@ -186,120 +285,13 @@ GhostWriterAI/
 
 ## 🤝 Contributing
 
-Contributions are welcome! If you have suggestions for improvements or new features, please open an issue or submit a pull request.
+Contributions are welcome! Feel free to open an issue or submit a pull request.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ---
 
 <p align="center">Made with ❤️ for the Generative AI Community</p>
 
-
----
-
-## 🚀 Key Features
-
-- **Multi-Agent Orchestration**: Uses LangGraph to manage a workflow between Research, Writing, and Editorial agents.
-- **Real-time Research**: Integrates with Tavily Search API to fetch the most recent and relevant data from the web.
-- **High-Performance LLM**: Leverages Groq's LPU™ Inference Engine for blazing-fast content generation.
-- **Beautiful UI**: A modern React-based dashboard with real-time markdown preview.
-- **Database Persistence**: Stores generated blogs and research notes in a SQLite database for easy access.
-
----
-
-## 🛠️ Technology Stack
-
-### Backend
-- **Framework**: FastAPI
-- **LLM Orchestration**: LangChain & LangGraph
-- **Inference**: Groq (Llama 3/Mistral models)
-- **Search Engine**: Tavily API
-- **Database**: SQLAlchemy with SQLite
-- **Environment**: Python 3.9+
-
-### Frontend
-- **Framework**: Vite + React
-- **Styling**: Tailwind CSS
-- **State Management**: React Hooks
-- **Markdown Rendering**: React Markdown
-
----
-
-## 📦 Installation & Setup
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com/yourusername/8_blog_writing_agent.git
-cd 8_blog_writing_agent
-```
-
-### 2. Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Create a `.env` file in the `backend` directory:
-```env
-GROQ_API_KEY=your_groq_key
-TAVILY_API_KEY=your_tavily_key
-DATABASE_URL=sqlite+aiosqlite:///./blogs.db
-```
-
-### 3. Frontend Setup
-```bash
-cd ../frontend
-npm install
-```
-
----
-
-## 🏃 Running the Application
-
-### Start the Backend
-```bash
-cd backend
-python app/main.py
-```
-The API will be available at `http://localhost:8000`
-
-### Start the Frontend
-```bash
-cd frontend
-npm run dev
-```
-The UI will be available at `http://localhost:5173`
-
----
-
-## 📂 Project Structure
-
-```text
-8_blog_writing_agent/
-├── backend/                # FastAPI Application
-│   ├── app/                # Core logic, agents, and API
-│   ├── blogs.db            # SQLite database
-│   └── requirements.txt    # Python dependencies
-├── frontend/               # React Application
-│   ├── src/                # UI components and pages
-│   └── package.json        # Node dependencies
-└── notebooks/              # Experimental Jupyter notebooks
-```
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! If you have suggestions for improvements or new features, please open an issue or submit a pull request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<p align="center">Made with ❤️ for the Generative AI Community</p>
